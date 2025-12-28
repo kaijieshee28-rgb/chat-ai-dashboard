@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { insertTileSchema, insertMessageSchema, tiles, messages } from './schema';
 
+export type AutomationMetadata = {
+  type: string;
+  url?: string;
+};
+
 export const errorSchemas = {
   validation: z.object({
     message: z.string(),
@@ -54,7 +59,13 @@ export const api = {
       path: '/api/chat',
       input: z.object({ message: z.string() }),
       responses: {
-        200: z.custom<typeof messages.$inferSelect>(), // Returns the AI response
+        200: z.object({
+          message: z.custom<typeof messages.$inferSelect>(),
+          automation: z.object({
+            type: z.string(),
+            url: z.string().optional(),
+          }).optional(),
+        }),
         500: errorSchemas.internal,
       },
     },

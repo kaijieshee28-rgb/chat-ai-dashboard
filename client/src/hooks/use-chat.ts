@@ -28,8 +28,11 @@ export function useSendMessage() {
       if (!res.ok) throw new Error("Failed to send message");
       return api.chat.send.responses[200].parse(await res.json());
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: [api.chat.history.path] });
+      if (data.automation?.type === 'open_url' && data.automation.url) {
+        window.open(data.automation.url, '_blank');
+      }
     },
     onError: (error) => {
       toast({

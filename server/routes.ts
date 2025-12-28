@@ -87,13 +87,27 @@ export async function registerRoutes(
             },
           },
         },
+        {
+          type: "function" as const,
+          function: {
+            name: "open_website",
+            description: "Automatically open a website for the user when they express clear intent to visit it",
+            parameters: {
+              type: "object",
+              properties: {
+                url: { type: "string", description: "The full URL of the website to open" },
+              },
+              required: ["url"],
+            },
+          },
+        },
       ];
 
       // Initial call to check for tool usage
       let response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
-          { role: "system", content: "You are a helpful assistant for a dashboard app. You can browse the web using the 'search_web' tool to find websites or information." },
+          { role: "system", content: "You are a helpful assistant for a dashboard app. You can browse the web using 'search_web' and automatically open websites for users using 'open_website' when they want to visit a site." },
           ...messages
         ],
         tools,
@@ -102,18 +116,28 @@ export async function registerRoutes(
       const toolCalls = response.choices[0].message.tool_calls;
 
       if (toolCalls) {
-        // AI wants to search the web
+        // AI wants to use tools
         const historyWithTool = [...messages, response.choices[0].message];
 
         for (const toolCall of toolCalls) {
-          if (toolCall.function.name === "search_web") {
-            const args = JSON.parse(toolCall.function.arguments);
+          const toolCallAny = toolCall as any;
+          if (toolCallAny.function.name === "search_web") {
+            const args = JSON.parse(toolCallAny.function.arguments);
             const searchResult = await performWebSearch(args.query);
 
             historyWithTool.push({
               role: "tool",
               tool_call_id: toolCall.id,
               content: searchResult,
+            } as any);
+          } else if (toolCallAny.function.name === "open_website") {
+            const args = JSON.parse(toolCallAny.function.arguments);
+            // In a real app, we might send a message back to frontend via WS or specific response field
+            // For this implementation, we'll confirm the action in the response
+            historyWithTool.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: `Website ${args.url} has been requested to open.`,
             } as any);
           }
         }
@@ -133,7 +157,17 @@ export async function registerRoutes(
       // Save AI response
       const aiMessage = await storage.createMessage({ role: 'assistant', content: aiContent });
 
-      res.json(aiMessage);
+      // Check for automation metadata
+      let automation;
+      if (toolCalls) {
+        const openCall = toolCalls.find(tc => (tc as any).function.name === "open_website");
+        if (openCall) {
+          const args = JSON.parse((openCall as any).function.arguments);
+          automation = { type: 'open_url', url: args.url };
+        }
+      }
+
+      res.json({ message: aiMessage, automation });
     } catch (err) {
       console.error('Chat error:', err);
       res.status(500).json({ message: 'Internal Server Error' });
